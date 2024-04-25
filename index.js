@@ -236,19 +236,185 @@ function genGrid() {
   const h = 15;
   /** @type {CellData[][]} */
   const grid = new Array(w).fill(null).map(() => new Array(h).fill(null).map(() => ({ conn: [0, 0, 0, 0] })));
+  const uf = new UnionFind(w * h * 2);
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {number} f
+   */
+  function vid(x, y, f) {
+    return (y * w + x) * 2 + f;
+  }
+
+  /**
+   * @typedef Edge
+   * @property {number} x
+   * @property {number} y
+   * @property {0 | 1} dir
+   * @property {0 | 1} floor0
+   * @property {0 | 1} floor1
+   */
+  /** @type {Edge[]} */
+  const edges = [];
   for (let x = 0; x < w; x++) {
     for (let y = 0; y < h; y++) {
-      if (x > 0 && Math.random() < 0.5) {
-        grid[x][y].conn[LEFT] = Math.random() < 0.5 ? 1 : 2;
-        grid[x - 1][y].conn[RIGHT] = Math.random() < 0.5 ? 1 : 2;
-      }
-      if (y > 0 && Math.random() < 0.5) {
-        grid[x][y].conn[UP] = Math.random() < 0.5 ? 1 : 2;
-        grid[x][y - 1].conn[DOWN] = Math.random() < 0.5 ? 1 : 2;
+      for (const floor0 of /** @type {const} */ ([0, 1])) {
+        for (const floor1 of /** @type {const} */ ([0, 1])) {
+          if (x + 1 < w) {
+            edges.push({
+              x,
+              y,
+              dir: 0,
+              floor0,
+              floor1,
+            });
+          }
+          if (y + 1 < h) {
+            edges.push({
+              x,
+              y,
+              dir: 1,
+              floor0,
+              floor1,
+            });
+          }
+        }
       }
     }
   }
+  shuffle(edges);
+  for (const edge of edges) {
+    if (edge.dir === 0) {
+      if (grid[edge.x][edge.y].conn[RIGHT] > 0) {
+        continue;
+      }
+      const v0 = vid(edge.x, edge.y, edge.floor0);
+      const v1 = vid(edge.x + 1, edge.y, edge.floor1);
+      if (uf.unify(v0, v1)) {
+        grid[edge.x][edge.y].conn[RIGHT] = /** @type {1 | 2} */ (1 << edge.floor0);
+        grid[edge.x + 1][edge.y].conn[LEFT] = /** @type {1 | 2} */ (1 << edge.floor1);
+      }
+    } else {
+      if (grid[edge.x][edge.y].conn[DOWN] > 0) {
+        continue;
+      }
+      const v0 = vid(edge.x, edge.y, edge.floor0);
+      const v1 = vid(edge.x, edge.y + 1, edge.floor1);
+      if (uf.unify(v0, v1)) {
+        grid[edge.x][edge.y].conn[DOWN] = /** @type {1 | 2} */ (1 << edge.floor0);
+        grid[edge.x][edge.y + 1].conn[UP] = /** @type {1 | 2} */ (1 << edge.floor1);
+      }
+    }
+  }
+
+  {
+    /** @type {[number, number][]} */
+    const cells = [];
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) {
+        cells.push([x, y]);
+      }
+    }
+    shuffle(cells);
+    for (const cell of cells) {
+      const [x, y] = cell;
+      const v0 = vid(x, y, 0);
+      const v1 = vid(x, y, 1);
+      if (uf.unify(v0, v1)) {
+        for (const [dir] of DIRS) {
+          if (grid[x][y].conn[dir] === 2) {
+            grid[x][y].conn[dir] = 1;
+          }
+        }
+      }
+    }
+    for (const cell of cells) {
+      const [x, y] = cell;
+      let countPos = 0;
+      let countNeg = 0;
+      for (const [dir, odir, dx, dy] of DIRS) {
+        if (grid[x][y].conn[dir] === 0) continue;
+        if (grid[x][y].conn[dir] === grid[x + dx][y + dy].conn[odir]) {
+          countPos++;
+        } else {
+          countNeg++;
+        }
+      }
+      if (countPos < countNeg) {
+        for (const [dir] of DIRS) {
+          if (grid[x][y].conn[dir] === 2) {
+            grid[x][y].conn[dir] = 1;
+          } else if (grid[x][y].conn[dir] === 1) {
+            grid[x][y].conn[dir] = 2;
+          }
+        }
+      }
+    }
+  }
+
   return grid;
+}
+
+/** @type {[number, number, number, number][]} */
+const DIRS = [
+  [RIGHT, LEFT, 1, 0],
+  [DOWN, UP, 0, 1],
+  [LEFT, RIGHT, -1, 0],
+  [UP, DOWN, 0, -1],
+];
+
+/**
+ * @template T
+ * @param {T[]} arr
+ */
+function shuffle(arr) {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+class UnionFind {
+  /** @type {number[]} */
+  v;
+  /**
+   * @param {number} size
+   */
+  constructor(size) {
+    this.v = new Array(size).fill(null).map(() => -1);
+  }
+
+  /** @param {number} x */
+  root(x) {
+    return this.v[x] < 0 ? x : this.v[x] = this.root(this.v[x]);
+  }
+
+  /**
+   * @param {number} x
+   * @param {number} y
+   */
+  eq(x, y) {
+    return this.root(x) === this.root(y);
+  }
+
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @returns {boolean}
+   */
+  unify(x, y) {
+    x = this.root(x);
+    y = this.root(y);
+    if (x === y) {
+      return false;
+    }
+    if (this.v[x] < this.v[y]) {
+      [x, y] = [y, x];
+    }
+    this.v[y] += this.v[x];
+    this.v[x] = y;
+    return true;
+  }
 }
 
 /**
