@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 function App() {
   return jsx("div", {
     children: [
-      jsx("h1", { key: "h1", children: "Hello, world!" }),
+      jsx("h1", { key: "h1", children: "Maze Gen" }),
       jsx(Grid, { key: "grid" }),
     ],
   });
